@@ -15,14 +15,17 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/boltdb/bolt"
 	"github.com/mmcdole/gofeed"
 	"github.com/robfig/cron"
 )
@@ -45,13 +48,18 @@ var Loaded []RSSEntry
 // feeds.
 var Timeout time.Duration
 
+// Database is the global database to check whether a feed has been seen
+var Database *bolt.DB
+
+// Bucket is the database bucket used for storing data
+var Bucket = []byte("rss2hook")
+
 // loadConfig loads the named configuration file and populates our
 // `Loaded` list of RSS-feeds & Webhook addresses
-func loadConfig(filename string) {
+func loadConfig(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Printf("Error opening %s - %s\n", filename, err.Error())
-		return
+		return fmt.Errorf("Error opening %s - %s\n", filename, err.Error())
 	}
 	defer file.Close()
 
@@ -92,6 +100,19 @@ func loadConfig(filename string) {
 		}
 	}
 
+	dir, _ := filepath.Abs(filepath.Dir(filename))
+	Database, err = bolt.Open(filepath.Join(dir, "cache.bolt"), 0600, nil)
+	if nil != err {
+		return fmt.Errorf("could not open cache file")
+	}
+	err = Database.Update(func(tx *bolt.Tx) error {
+		if _, err := tx.CreateBucketIfNotExists(Bucket); nil != err {
+			return err
+		}
+		return nil
+	})
+
+	return err
 }
 
 // fetchFeed fetches the contents of the specified URL.
@@ -136,10 +157,16 @@ func isNew(parent string, item *gofeed.Item) bool {
 	// Hexadecimal conversion
 	hexSha1 := hex.EncodeToString(hashBytes)
 
-	if _, err := os.Stat(os.Getenv("HOME") + "/.rss2hook/seen/" + hexSha1); os.IsNotExist(err) {
-		return true
-	}
-	return false
+	err := Database.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(Bucket)
+		v := b.Get([]byte(hexSha1))
+		if nil != v {
+			return fmt.Errorf("feed item is not new")
+		}
+		return nil
+	})
+
+	return nil == err
 }
 
 // recordSeen ensures that we won't re-announce a given feed-item.
@@ -153,11 +180,10 @@ func recordSeen(parent string, item *gofeed.Item) {
 	// Hexadecimal conversion
 	hexSha1 := hex.EncodeToString(hashBytes)
 
-	dir := os.Getenv("HOME") + "/.rss2hook/seen"
-	os.MkdirAll(dir, os.ModePerm)
-
-	_ = ioutil.WriteFile(dir+"/"+hexSha1, []byte(item.Link), 0644)
-
+	_ = Database.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(Bucket)
+		return b.Put([]byte(hexSha1), []byte(item.Link))
+	})
 }
 
 // checkFeeds is our work-horse.
@@ -247,8 +273,8 @@ func notify(hook string, item *gofeed.Item) error {
 	}
 	status := res.StatusCode
 
-	if status != 200 {
-		fmt.Printf("notify: Warning - Status code was not 200: %d\n", status)
+	if status != 200 && status != 201 {
+		fmt.Printf("notify: Warning - Status code was %d\n", status)
 	}
 	return nil
 }
@@ -272,7 +298,11 @@ func main() {
 	//
 	// Load the configuration file
 	//
-	loadConfig(*config)
+	err := loadConfig(*config)
+	if nil != err {
+		log.Fatal(err)
+		return
+	}
 
 	//
 	// Show the things we're monitoring
@@ -305,5 +335,6 @@ func main() {
 		_ = <-sigs
 		done <- true
 	}()
+	_ = Database.Close()
 	<-done
 }
