@@ -1,6 +1,6 @@
-module github.com/skx/rss2hook
+module github.com/RoyXiang/rss2hook
 
-go 1.12
+go 1.15
 
 require (
 	github.com/PuerkitoBio/goquery v1.5.0 // indirect
