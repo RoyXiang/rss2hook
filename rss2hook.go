@@ -27,7 +27,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/mmcdole/gofeed"
-	"github.com/robfig/cron"
+	"github.com/robfig/cron/v3"
 )
 
 // RSSEntry describes a single RSS feed and the corresponding hook
@@ -303,6 +303,7 @@ func main() {
 		log.Fatal(err)
 		return
 	}
+	defer Database.Close()
 
 	//
 	// Show the things we're monitoring
@@ -335,6 +336,5 @@ func main() {
 		_ = <-sigs
 		done <- true
 	}()
-	_ = Database.Close()
 	<-done
 }

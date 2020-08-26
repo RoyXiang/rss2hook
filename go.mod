@@ -3,11 +3,7 @@ module github.com/RoyXiang/rss2hook
 go 1.15
 
 require (
-	github.com/PuerkitoBio/goquery v1.5.0 // indirect
 	github.com/boltdb/bolt v1.3.1
-	github.com/mmcdole/gofeed v1.0.0-beta2
-	github.com/mmcdole/goxpp v0.0.0-20181012175147-0068e33feabf // indirect
-	github.com/robfig/cron v0.0.0-20180505203441-b41be1df6967
-	github.com/stretchr/testify v1.3.0 // indirect
-	golang.org/x/net v0.0.0-20190322120337-addf6b3196f6 // indirect
+	github.com/mmcdole/gofeed v1.0.0
+	github.com/robfig/cron/v3 v3.0.1
 )
