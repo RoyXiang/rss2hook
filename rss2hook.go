@@ -9,8 +9,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -147,19 +145,11 @@ func fetchFeed(url string) (string, error) {
 
 // isNew returns TRUE if this feed-item hasn't been notified about
 // previously.
-func isNew(parent string, item *gofeed.Item) bool {
-
-	hasher := sha1.New()
-	hasher.Write([]byte(parent))
-	hasher.Write([]byte(item.GUID))
-	hashBytes := hasher.Sum(nil)
-
-	// Hexadecimal conversion
-	hexSha1 := hex.EncodeToString(hashBytes)
+func isNew(item *gofeed.Item) bool {
 
 	err := Database.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(Bucket)
-		v := b.Get([]byte(hexSha1))
+		v := b.Get([]byte(item.GUID))
 		if nil != v {
 			return fmt.Errorf("feed item is not new")
 		}
@@ -170,19 +160,11 @@ func isNew(parent string, item *gofeed.Item) bool {
 }
 
 // recordSeen ensures that we won't re-announce a given feed-item.
-func recordSeen(parent string, item *gofeed.Item) {
-
-	hasher := sha1.New()
-	hasher.Write([]byte(parent))
-	hasher.Write([]byte(item.GUID))
-	hashBytes := hasher.Sum(nil)
-
-	// Hexadecimal conversion
-	hexSha1 := hex.EncodeToString(hashBytes)
+func recordSeen(item *gofeed.Item) {
 
 	_ = Database.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(Bucket)
-		return b.Put([]byte(hexSha1), []byte(item.Link))
+		return b.Put([]byte(item.GUID), []byte(item.Link))
 	})
 }
 
@@ -218,7 +200,7 @@ func checkFeeds() {
 		for _, i := range feed.Items {
 
 			// If we've not already notified about this one.
-			if isNew(monitor.feed, i) {
+			if isNew(i) {
 
 				// Trigger the notification
 				err := notify(monitor.hook, i)
@@ -227,7 +209,7 @@ func checkFeeds() {
 				// then record this item as having been
 				// processed successfully.
 				if err == nil {
-					recordSeen(monitor.feed, i)
+					recordSeen(i)
 				}
 			}
 		}
